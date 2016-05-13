@@ -1,0 +1,188 @@
+TABLE DES MATIÈRES
+==================
+
+1. PRÉREQUIS
+2. JEUX DE DONNÉES
+3. STRUCTUE DU RÉPERTOIRE
+4. UTILISATION
+5. FONCTIONNEMENT
+    A. COMPTER LES OCCURENCES
+    B. TRONCAGE DU FICHIER D'APPRENTISSAGE
+    C. COMPTER LES NOUVELLES OCCURENCES
+    D. PRÉDICTION DES ENTITÉS NOMMÉES
+    E. CALCUL DES PERFORMANCES
+6. RÉFÉRENCES
+
+1. PRÉREQUIS
+============
+
+Ce programme ne nécessite aucun paquets particuliers excepté Python 2.7.
+
+2. JEUX DE DONNÉES
+==================
+
+Les jeux de données contiennent au minimum trois fichiers :
+- lang.train : ce fichier est au format CoNLL 2002. C'est-à-dire qu'il contient 
+  un token par ligne, une ligne de vide indiquant la fin d'une phrase. Chaque 
+  token est suivi d'un unique espace puis d'un tag. Le tag indique si le token 
+  est une entité nommée il y a quatre type d'entités nommées :
+    - PER : les noms de personnes (person)
+    - LOC : les places, villes, pays, endroits... (location)
+    - ORG : les entreprises, sociétés, organismes... (organization)
+    - MISC : des entités particulères qui ne peuvent être regroupées dans les
+        types précédents (miscellaneous)
+- lang.testa.orig : ce fichier est au même format que le fichier lang.train 
+  mais contient des tokens différents. Il s'agit du jeu de test original.
+- lang.testa : ce fichier est identique à lang.testa.orig, excepté qu'il
+  ne contient que les tokens (un par ligne). Il va permettre de tester le 
+  programme en tentant d'y ajouter des tags. Il pourra ensuite être comparé 
+  avec lang.testa.orig afin de rendre compte des performances du programme.
+
+"lang" est le langage naturel utilisé. Chaque jeu de données doit être dans 
+un dossier séparé à l'intérieur du dossier "data". Le répertoire "data" 
+actuel contient trois jeux de données : eng, esp et dut pour english, espanol 
+et dutch - anglais, espagnole, néerlandais. Les jeux de données esp et dut 
+proviennent de la CoNLL 2002 et le jeu de donnée eng provient de la CoNLL 2003.
+Chaque dossier peut contenir plusieurs paires de fichiers lang.testN.orig et 
+lang.testN, N prend sa valeur dans [a-z]. Cela permet de tester avec 
+différents textes.
+
+3. STRUCTUE DU RÉPERTOIRE
+=========================
+
+- src : contient le code source du programme Python.
+- data : contient les jeux de données
+- results : contient les résultats du programme
+
+4. UTILISATION
+==============
+
+Lancez simplement le script "runme.sh". Ce script bash va se chargé d'appeler 
+le programme python et placera les résultats dans le dossier "results". Un 
+tableau récapitulant les performances du programme, calculées en comparant ses 
+résultats au jeu de donnée original est affiché dans le terminal. 
+Par défault le jeu de données utilisé est le jeu anglais (dans '/data/eng') 
+mais vous pouvez en utiliser un autre avec l'option --dataset. Utiliser 
+--help pour en savoir plus sur les options possibles.
+
+Note: il est peut-être nécessaire de rendre le script exécutable avec :
+    $ chmod +x runme.sh
+
+Le programme a été testé sur Ubuntu 14.04, 14.10 et 15.04 ainsi que sur 
+Debian 8.
+
+5. FONCTIONNEMENT
+=================
+
+A. COMPTER LES OCCURENCES
+-------------------------
+
+Le programme va d'abord calculer le nombre d'occurrences de chaque association 
+de token/tag. Cela signifie que (David, I-PER) et (David, B-PER) sont deux 
+associations différentes et leurs occurrences seront comptées séparément.
+Le programme calcule également le nombre d'occurrences de chaque combinaison 
+de trigrammes. Les éléments des trigrammes sont les tags. Cela permet de voir 
+les répartitions fréquentes des entités dans leur contexte.
+Cette étape est réalisée grâce à un modèle de Markov caché.
+
+B. TRONCAGE DU FICHIER D'APPRENTISSAGE
+--------------------------------------
+
+Une fois que l'on a calculé le nombre d'occurrences de chaque association de
+token/tag on peut calculer leur probabilités de transition.
+Voir: https://fr.wikipedia.org/wiki/Mod%C3%A8le_de_Markov_cach%C3%A9
+Voir: https://fr.wikipedia.org/wiki/Processus_de_Markov
+
+Il s'agit de modéliser une chaîne de Markov à l'aide de représentations 
+synthétiques afin de connaître l'évolution des états du système.
+Ensuite il faut remplacer certaines catégories de mots par un token commun. 
+Appelons un tel token un token-groupe. Le programme distingue quatre catégories
+de mots à remplacer :
+    - Les mots en majuscules (ex. : CIRCL) seront remplacés par le token-groupe
+      _CAPITALIZED_.
+    - Les mots commençant par une majuscule (ex. : David) seront remplacés par
+      le token-groupe _PROPER_NOUN_.
+    - La ponctuation et les nombres (ex.: . OU / OU 45.8) seront remplacés par
+      le token-groupe _PUNCTUATION_.
+    - Les mots peur fréquents, avec un nombre d'occurrences inférieur à une
+      limite (par défaut 5) seront remplacés par le token-groupe _UNCOMMON_.
+
+Cette étape va permettre de corriger les erreurs survenues lors d'une 
+transmission depuis le fichier de test. En effet, le jeu de test sera 
+différent du jeu d'apprentissage mais grâce à ce procédé nous allons pouvoir 
+prédire la probabilité de transition des tokens du jeu de test même s'ils 
+n'apparaissent pas dans le jeu d'apprentissage. On peut voir cela comme un 
+lissage du relief ou comme la capacité d'une forme à se rapprocher d'une 
+autre forme, dans les cartes auto adaptatives.
+
+C. COMPTER LES NOUVELLES OCCURENCES
+-----------------------------------
+
+Nous devons maintenant recalculer les fréquences des tokens et des n-grams de 
+tags comme à l'étape A. mais cette fois-ci nous allons utiliser le fichier 
+tronqué.
+Évidemment, il y a beaucoup moins de tokens et donc de n-grams à compter 
+(environ 4 à 5 fois moins dans mes tests) car la plupart des tokens a été 
+remplacé à l'étape précédent par des tokens-groupes.
+
+D. PRÉDICTION DES ENTITÉS NOMMÉES
+---------------------------------
+
+Afin de prédire les entités nommées du jeu de test le programme utilise 
+l'algorithme de Viterbi.
+Voir: https://fr.wikipedia.org/wiki/Algorithme_de_Viterbi
+
+Cet algorithme utilise les probabilités de transition du modèle de Markov 
+caché ainsi que les estimations par maximum de vraisemblance dans 
+l'algorithme de Viterbi. Le but étant de "gommer" les erreurs survenues lors 
+des transitions.
+Effectivement, d'après sa définition, l'algorithme de Viterbi "s'appuie sur 
+la connaissance du canal bruité, c'est-à-dire la probabilité qu'une 
+information ait été modifiée en une autre, et permet de simplifier 
+radicalement la complexité de la recherche du message d'origine le plus 
+probable. Cet algorithme a pour but de trouver la séquence d'états la plus 
+probable ayant produit la séquence mesurée."
+Ici, le canal bruité est le jeu de donnés. Les informations sont les tokens 
+des jeux de données. Les informations du jeu d'apprentissage ont été 
+modifiées en d'autres informations : les tokens ont été remplacés par des 
+tokens-groupes.
+Cette étape permet d'estimer la séquence d'états cachés la plus probable 
+ayant été générée par le modèle de Markov caché. Le taux de probabilité est 
+enregistré
+après le token et le te tag de l'entité nommée prédite par l'algorithme dans 
+un fichier correspondant au jeu de test.
+
+E. CALCUL DES PERFORMANCES
+--------------------------
+
+Maintenant que le programme a prédit les entités nommées du jeu de test sans 
+les entités originales on peut les comparer aux entités nommées du jeu de 
+test avec les entités originales. Les deux jeux de données sont maintenant 
+très similaires : ils contiennent un token et le tag qui lui est associé par 
+ligne. Le jeu avec les entités prédites contient en plus la probabilité de 
+chaque token.
+Ce script calcul la précision des prédictions ainsi que le nombre d'entités 
+nommés prédites correspondant aux même entitées dans le jeu original. 
+
+6. RÉFÉRENCES
+=============
+
+[1] http://www.cnts.ua.ac.be/conll2002/ner/
+[2] http://www.cnts.ua.ac.be/conll2003/ner/
+Ce projet a été grandement inspiré par la CoNLL (Conference on Natural 
+Language Learning) de 2002. En effet, cette conférence traitait le sujet de 
+la reconnaissance d'entités nommées et d'ailleurs les données utilisées sont 
+celles des CoNLL 2002 (esp et dut) et 2003 (eng).
+
+[3] https://en.wikipedia.org/wiki/Hidden_Markov_model
+Pour en savoir plus sur les modèles de Markov cachés qui permettent ici de 
+compter les n-grams et de calculer les probabilités lors de l'étape de 
+prédiction des entités nommées.
+
+[4] https://en.wikipedia.org/wiki/Viterbi_algorithm
+Pour plus d'information sur l'algorithme de Viterbi. Cet algorithme est 
+utilisé pour tagger les entités nommées.
+
+[5] https://en.wikipedia.org/wiki/Named-entity_recognition
+Décrit l'intérêt de la reconnaissance d'entités nommées ainsi que les types
+courrants d'entités utilisé dans le programme.
